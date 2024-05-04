@@ -1,0 +1,129 @@
+################ create custom root ca and sub ca  sign csr for web server testing
+#### testing
+
+#### 1. master node
+#### 2. client
+
+#### 1. master node
+		hostnamectl set-hostname www.domain.com  ####-- your custom domain
+		vim /etc/hosts
+			127.0.0.1 www.domain.com
+		mkdir ca
+		cd ca
+		mkdir root-ca
+		cd root-ca [direactory]
+		mkdir private [ for private key]
+		cd private
+		yum install openssl* -y
+		openssl genrsa -out root-ca.key  -aes256 4096 ####[ create private key ]
+		cd ..	
+		cp /etc/pki/tls/openssl.cnf .
+		vim opensslc.cnf
+			              #### changes in file
+					          [ CA_default ]
+					                    dir             = /root/ca/root-ca  
+					                    certs           = $dir/certs            
+					                    crl_dir         = $dir/crl              
+					                    database        = $dir/index.txt        
+					                    unique_subject  = yes                   	
+					                    rand_serial     = yes                                 
+					                    new_certs_dir   = $dir/newcerts         
+					                    certificate     = $dir/certs/root-ca.crt        
+					                    ####serial         = $dir/serial           
+					                    crlnumber       = $dir/crlnumber        
+                              private_key     = $dir/private/root-ca.key   #### The private key
+
+                      #### change in file for subca 
+					            [v3-intermediate_ca]
+
+					                      subjectKeyIdentifier=hash
+					                      authorityKeyIdentifier=keyid:always,issuer
+					                      basicConstraints = critical,CA:true,pathlen:0 
+
+#### [ca true the sub ca can make other sub ca and pathlen means how many it create subca
+####  (chain of subca) pathlen-0 means subca have power to create 
+####  subca but because pathlen 0 they can't if pathlen 1 then subca can make one more subca]
+
+	  mkdir newcerts
+		mkdir certs
+		touch index.txt
+		chmod 600 index.txt
+		cat index.txt
+		openssl req -config openssl.cnf -key private/root-ca.key -new -days 3650 -sha256 -x509 -out certs/root-ca.crt -extensions v3_ca
+		#### [verify certicate create or not]
+						cd certs
+						openssl x509 -in root-ca.crt -text
+						cd ..
+						
+		#### setup subca
+
+
+		mkdir sub-ca
+		cd sub-ca ####[direactory]
+		mkdir private ####[ for private key]
+		cd private
+		openssl genrsa -out sub-ca.key  -aes256 4096  ####[ create private key ]
+		cd ..	
+		cp /etc/pki/tls/openssl.cnf .
+		 [CA_default ]
+		vim openssl.cnf
+			dir		= /root/ca/sub-ca		
+			certs		= $dir/certs							
+			new_certs_dir	= $dir/newcerts	
+			certificate     = $dir/sub-ca.crt 	
+			private_key	= $dir/private/sub-ca.key    #### The private key
+		
+		mkdir newcerts
+		mkdir certs
+		touch index.txt
+		echo 01 > serial
+		cat index.txt
+		openssl req -new -key private/sub-ca.key -sha256 -out subca.csr	
+			#### [verify csr]
+				
+			openssl req -in subca.csr -text
+		#### [go to root ca directory]
+
+
+		openssl ca -config openssl.cnf -extensions v3-intermediate_ca     
+		-in /root/ca/sub-ca/subca.csr   -out /root/ca/sub-ca/subca.crt   -days 3650
+		
+		#### [again go to sub ca directory]
+			verify crt
+		openssl x509 -in subca.crt -text
+
+
+			
+
+	#### now test subca working coorect or not
+		#### by same system
+			#### install httpd
+			 yum install httpd -y
+			 systemctl start httpd
+			 cat > /var/www/html/index.html
+					hello
+			cd /root/ca
+			mkdir webserver
+			cd webserver
+			mkdir private
+			cd private
+			openssl genrsa -out server.key 4096
+			cd ..
+			openssl req -key private/server.key -new -sha256 -out server.csr
+			openssl req -in server.csr -text
+			openssl ca -config openssl.cnf -extensions v3_req -days 365 -in /root/ca/webserver/server.csr -out /root/ca/webserver/server.crt
+      openssl s_server -accept 443 -www -key private/server.key -cert server.crt -CAfile /root/ca/sub-ca/subca.crt
+
+			#### to enter root ca in local file
+				cd /etc/pki/tls/certs/
+				cat /root/ca/root-ca/certs/root-ca.crt >> ca-bundle.crt
+				curl https://www.priyanshu[domain].com:443
+						
+					
+	
+#### NOTE : DURING SIGNING ERROR CAME COMPANY OR ORGANIZATION NAME MIMATCH GO TO OPENNSSL.CNF FILE CHANGE ATTRICUTE ORAGANISATION= MATCH TO OPTIONAL
+
+
+
+
+			
